@@ -70,6 +70,13 @@ td select,td input{padding:5px 8px;font-size:13px}
 .aviso{background:#2a2410;border:1px solid var(--oro);border-radius:10px;padding:10px 12px;font-size:13px;color:#e8dcb8;margin:10px 0}
 .g2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
 label{display:block;color:var(--mut);font-size:13px;margin:8px 0 4px}
+dialog{background:var(--bg2);color:var(--txt);border:1px solid var(--line);border-radius:14px;padding:20px;width:min(460px,94vw)}
+dialog::backdrop{background:rgba(0,0,0,.6)}
+dialog h3{margin:0 0 4px;font-size:17px}dialog p.sub{color:var(--mut);margin:0 0 8px;font-size:13px}
+.chk{display:flex;gap:9px;align-items:flex-start;margin:12px 0 4px;color:var(--txt);font-size:14px;cursor:pointer}
+.chk input{width:auto;margin-top:3px}
+.acciones{display:flex;gap:8px;justify-content:flex-end;margin-top:16px}
+.origen{font-size:11px;color:var(--mut)}
 .toast{position:fixed;bottom:18px;left:50%;transform:translateX(-50%);background:#222;border:1px solid var(--oro);padding:10px 16px;border-radius:10px;z-index:9;display:none}
 @media (max-width:760px){
   .wrap{flex-direction:column;height:auto}
@@ -120,6 +127,7 @@ label{display:block;color:var(--mut);font-size:13px;margin:8px 0 4px}
       <div class="barra">
         <input id="buscarCli" placeholder="Buscar…" oninput="pintarClientes()">
         <select id="filtroEtiqueta" onchange="pintarClientes()"><option value="">Todas las etiquetas</option></select>
+        <select id="filtroOrigen" onchange="pintarClientes()"><option value="">Todos los orígenes</option></select>
         <select id="filtroVentana" onchange="pintarClientes()">
           <option value="">Todos</option>
           <option value="abierta">Se les puede escribir libre (últimas 24 h)</option>
@@ -127,6 +135,8 @@ label{display:block;color:var(--mut);font-size:13px;margin:8px 0 4px}
         </select>
         <span id="cuentaSel" style="color:var(--mut)"></span>
         <span style="flex:1"></span>
+        <button class="sec" onclick="abrirAgregar()">＋ Agregar cliente</button>
+        <button class="sec" onclick="abrirImportar()">⬆ Importar Excel</button>
         <button class="sec" onclick="exportar()">⬇ Exportar a Excel (CSV)</button>
         <button class="oro" onclick="remarketingSeleccion()">✉ Remarketing a seleccionados</button>
       </div>
@@ -134,7 +144,7 @@ label{display:block;color:var(--mut);font-size:13px;margin:8px 0 4px}
       <table>
         <thead><tr>
           <th><input type="checkbox" id="selTodos" style="width:auto" onchange="seleccionarTodos(this.checked)"></th>
-          <th>Nombre</th><th>Teléfono</th><th>Etiqueta</th><th class="oculta-m">Último mensaje</th><th class="oculta-m">Msgs</th><th>Texto libre</th><th class="oculta-m">Notas</th><th></th>
+          <th>Nombre</th><th>Teléfono</th><th>Etiqueta</th><th title="Autorizó recibir promociones por WhatsApp">Promos</th><th class="oculta-m">Último mensaje</th><th class="oculta-m">Msgs</th><th>Texto libre</th><th class="oculta-m">Notas</th><th></th>
         </tr></thead>
         <tbody id="tbodyCli"></tbody>
       </table>
@@ -186,11 +196,44 @@ label{display:block;color:var(--mut);font-size:13px;margin:8px 0 4px}
     </div>
   </div>
 </div>
+<dialog id="dlgAgregar">
+  <h3>Agregar cliente</h3>
+  <p class="sub">Para clientes que registran en las islas o por fuera de WhatsApp.</p>
+  <label>Celular</label><input id="aNumero" inputmode="tel" placeholder="300 123 4567">
+  <label>Nombre</label><input id="aNombre" placeholder="Nombre del cliente">
+  <div class="g2">
+    <div><label>Dónde se registró</label><select id="aOrigen"></select></div>
+    <div><label>Etiqueta</label><select id="aEtiqueta"></select></div>
+  </div>
+  <label>Notas</label><input id="aNotas" placeholder="Ej: le gusta Yara, compra para regalo">
+  <label class="chk"><input type="checkbox" id="aAutoriza"> El cliente autorizó recibir promociones por WhatsApp</label>
+  <p id="aError" style="color:#f2a6a6;margin:8px 0 0;font-size:13px"></p>
+  <div class="acciones">
+    <button class="sec" onclick="document.getElementById('dlgAgregar').close()">Cancelar</button>
+    <button class="sec" id="aOtro" onclick="guardarNuevo(true)">Guardar y agregar otro</button>
+    <button class="oro" onclick="guardarNuevo(false)">Guardar</button>
+  </div>
+</dialog>
+
+<dialog id="dlgImportar">
+  <h3>Importar clientes desde Excel</h3>
+  <p class="sub">Sube un archivo .xlsx o .csv con una columna de <b>nombre</b> y otra de <b>celular</b>. Si tiene columnas de <b>notas</b> o <b>autoriza</b> (sí/no), también se cargan. Los números repetidos no se duplican.</p>
+  <label>Archivo</label><input type="file" id="iArchivo" accept=".xlsx,.xls,.csv" onchange="leerArchivo()">
+  <p id="iVista" style="color:var(--mut);font-size:13px;margin:8px 0 0"></p>
+  <label>Dónde se registraron</label><select id="iOrigen"></select>
+  <label class="chk"><input type="checkbox" id="iAutoriza"> Todos los clientes de esta lista autorizaron recibir promociones</label>
+  <p id="iResultado" style="font-size:13px;margin:8px 0 0"></p>
+  <div class="acciones">
+    <button class="sec" onclick="document.getElementById('dlgImportar').close()">Cerrar</button>
+    <button class="oro" id="iBoton" onclick="importar()" disabled>Importar</button>
+  </div>
+</dialog>
 <div class="toast" id="toast"></div>
 
 <script>
 let CLAVE = '';
 try { CLAVE = sessionStorage.getItem('incanto_clave') || localStorage.getItem('incanto_clave') || ''; } catch(e){}
+let origenes = [], pausaHoras = 2, filasImport = [];
 let contactos = [], etiquetas = [], resumen = {}, sel = null, seleccion = new Set(), timer = null, campDest = [];
 
 function toast(t){ const e=document.getElementById('toast'); e.textContent=t; e.style.display='block'; setTimeout(()=>e.style.display='none',2600); }
@@ -221,7 +264,7 @@ function ir(v){ document.querySelectorAll('.vista').forEach(x=>x.classList.remov
   document.getElementById('v-'+v).classList.add('act'); document.getElementById('tab-'+v).classList.add('act'); if(v==='campanas') cargarCampanas(); }
 
 async function cargar(){
-  try{ const j = await api('/api/contactos'); contactos=j.contactos; etiquetas=j.etiquetas; resumen=j.resumen; }catch(e){ return; }
+  try{ const j = await api('/api/contactos'); contactos=j.contactos; etiquetas=j.etiquetas; resumen=j.resumen; origenes=j.origenes||[]; pausaHoras=j.pausa_horas||2; }catch(e){ return; }
   const nl = resumen.sin_leer||0; const b=document.getElementById('nNoLeidos'); b.style.display=nl?'inline':'none'; b.textContent=nl;
   pintarLista(); pintarKpis(); pintarClientes();
   if(sel && document.activeElement.tagName!=='TEXTAREA') abrirChat(sel, true);
@@ -231,7 +274,7 @@ async function cargar(){
 function pintarLista(){
   const f=(document.getElementById('buscarChat').value||'').toLowerCase();
   const el=document.getElementById('listaChats'); el.innerHTML='';
-  const lista = contactos.filter(c=>!f || (c.nombre||'').toLowerCase().includes(f) || c.numero.includes(f));
+  const lista = contactos.filter(c=>c.total_msgs>0 && (!f || (c.nombre||'').toLowerCase().includes(f) || c.numero.includes(f)));
   if(!lista.length){ el.innerHTML='<div class="vacio">Todavía no hay conversaciones.</div>'; return; }
   for(const c of lista){
     const d=document.createElement('div'); d.className='item'+(c.numero===sel?' sel':''); d.onclick=()=>abrirChat(c.numero);
@@ -262,7 +305,7 @@ async function abrirChat(numero, silencioso){
       <button class="sec" onclick="editarNombre('${c.numero}','${esc(c.nombre)}')">✎ Nombre</button>
     </div>
     <div class="msgs" id="msgs">${msgs||'<div class="vacio">Sin mensajes.</div>'}</div>
-    <div class="resp"><textarea id="txtResp" rows="2" placeholder="Escribe como asesor… (al enviar, el bot se pausa 6 h con este cliente)">${esc(borrador)}</textarea><button onclick="enviar('${c.numero}')">Enviar</button></div>`;
+    <div class="resp"><textarea id="txtResp" rows="2" placeholder="Escribe como asesor… (al enviar, el bot se pausa ${pausaHoras} h con este cliente)">${esc(borrador)}</textarea><button onclick="enviar('${c.numero}')">Enviar</button></div>`;
   const ms=document.getElementById('msgs'); if(scrollAbajo) ms.scrollTop=ms.scrollHeight;
   document.getElementById('txtResp').addEventListener('keydown', e=>{ if(e.key==='Enter' && !e.shiftKey){ e.preventDefault(); enviar(c.numero); } });
 }
@@ -284,13 +327,15 @@ function pintarKpis(){
     <div class="kpi"><b>${resumen.hoy||0}</b><span>escribieron en 24 h</span></div>
     <div class="kpi"><b>${resumen.ventana||0}</b><span>se les puede escribir libre</span></div>
     <div class="kpi"><b>${resumen.compraron||0}</b><span>compraron</span></div>
-    <div class="kpi"><b>${resumen.sin_leer||0}</b><span>chats sin leer</span></div>`;
+    <div class="kpi"><b>${resumen.sin_leer||0}</b><span>chats sin leer</span></div>
+    <div class="kpi"><b>${resumen.tienda||0}</b><span>registrados por fuera</span></div>`;
   const s=document.getElementById('filtroEtiqueta'); if(s.options.length<=1) for(const e of etiquetas){ const o=document.createElement('option'); o.value=e; o.textContent=e; s.appendChild(o); }
+  const so=document.getElementById('filtroOrigen'); if(so.options.length<=1) for(const e of origenes){ const o=document.createElement('option'); o.value=e; o.textContent=e; so.appendChild(o); }
 }
 function clientesFiltrados(){
-  const f=(document.getElementById('buscarCli').value||'').toLowerCase(); const et=document.getElementById('filtroEtiqueta').value; const v=document.getElementById('filtroVentana').value;
+  const f=(document.getElementById('buscarCli').value||'').toLowerCase(); const et=document.getElementById('filtroEtiqueta').value; const v=document.getElementById('filtroVentana').value; const og=document.getElementById('filtroOrigen').value;
   return contactos.filter(c => (!f || (c.nombre||'').toLowerCase().includes(f) || c.numero.includes(f) || (c.notas||'').toLowerCase().includes(f))
-    && (!et || c.etiqueta===et) && (!v || (v==='abierta')===c.ventana_abierta));
+    && (!et || c.etiqueta===et) && (!og || c.origen===og) && (!v || (v==='abierta')===c.ventana_abierta));
 }
 function pintarClientes(){
   const tb=document.getElementById('tbodyCli'); tb.innerHTML='';
@@ -298,8 +343,9 @@ function pintarClientes(){
     const tr=document.createElement('tr');
     tr.innerHTML=`<td><input type="checkbox" style="width:auto" ${seleccion.has(c.numero)?'checked':''} onchange="marcar('${c.numero}',this.checked)"></td>
       <td><input value="${esc(c.nombre)}" placeholder="Sin nombre" onchange="guardarContacto('${c.numero}',{nombre:this.value})"></td>
-      <td><a href="#" onclick="sel='${c.numero}';ir('bandeja');abrirChat('${c.numero}');return false">${fmtNum(c.numero)}</a></td>
+      <td>${c.total_msgs>0?`<a href="#" onclick="sel='${c.numero}';ir('bandeja');abrirChat('${c.numero}');return false">${fmtNum(c.numero)}</a>`:fmtNum(c.numero)}<br><span class="origen">${esc(c.origen)}</span></td>
       <td><select onchange="guardarContacto('${c.numero}',{etiqueta:this.value})">${etiquetas.map(e=>`<option ${e===c.etiqueta?'selected':''}>${e}</option>`).join('')}</select></td>
+      <td style="text-align:center"><input type="checkbox" style="width:auto" title="Autorizó promociones" ${c.autoriza?'checked':''} onchange="guardarContacto('${c.numero}',{autoriza:this.checked})"></td>
       <td class="oculta-m"><small style="color:var(--mut)">${hora(c.ultimo_msg)}</small><br><small>${esc((c.ultimo_texto||'').slice(0,50))}</small></td>
       <td class="oculta-m">${c.total_msgs}</td>
       <td>${c.ventana_abierta?'<span class="ok">✓ hasta '+hora(c.ventana_hasta)+'</span>':'<span class="no">plantilla</span>'}</td>
@@ -317,12 +363,91 @@ function remarketingSeleccion(){
   campDest=[...seleccion]; ir('campanas'); pintarDestinatarios();
 }
 
+/* ---------- Agregar e importar clientes ---------- */
+function llenarSelect(id, valores, elegido){ document.getElementById(id).innerHTML = valores.map(v=>`<option ${v===elegido?'selected':''}>${esc(v)}</option>`).join(''); }
+function abrirAgregar(){
+  for(const id of ['aNumero','aNombre','aNotas']) document.getElementById(id).value='';
+  document.getElementById('aAutoriza').checked=false; document.getElementById('aError').textContent='';
+  llenarSelect('aOrigen', origenes.filter(o=>o!=='WhatsApp'), document.getElementById('aOrigen').value || 'Isla Villacentro');
+  llenarSelect('aEtiqueta', etiquetas, 'nuevo');
+  document.getElementById('dlgAgregar').showModal(); document.getElementById('aNumero').focus();
+}
+async function guardarNuevo(otro){
+  const body={numero:document.getElementById('aNumero').value, nombre:document.getElementById('aNombre').value.trim(),
+    origen:document.getElementById('aOrigen').value, etiqueta:document.getElementById('aEtiqueta').value,
+    notas:document.getElementById('aNotas').value.trim(), autoriza:document.getElementById('aAutoriza').checked};
+  if(!body.numero.trim()){ document.getElementById('aError').textContent='Escribe el celular.'; return; }
+  try{
+    const j=await api('/api/agregar',{method:'POST',body:JSON.stringify(body)});
+    toast(j.resultado==='nuevo'?'Cliente agregado':'Ese número ya existía: se completaron sus datos');
+    cargar();
+    if(otro){ for(const id of ['aNumero','aNombre','aNotas']) document.getElementById(id).value=''; document.getElementById('aAutoriza').checked=false;
+      document.getElementById('aError').textContent=''; document.getElementById('aNumero').focus(); }
+    else document.getElementById('dlgAgregar').close();
+  }catch(e){ document.getElementById('aError').textContent=e.message; }
+}
+document.getElementById('aNumero').addEventListener('keydown', e=>{ if(e.key==='Enter') guardarNuevo(false); });
+
+function abrirImportar(){
+  document.getElementById('iArchivo').value=''; filasImport=[]; document.getElementById('iVista').textContent='';
+  document.getElementById('iResultado').textContent=''; document.getElementById('iBoton').disabled=true; document.getElementById('iAutoriza').checked=false;
+  llenarSelect('iOrigen', origenes.filter(o=>o!=='WhatsApp'), 'Isla Villacentro');
+  document.getElementById('dlgImportar').showModal();
+}
+function cargarSheetJS(){
+  if(window.XLSX) return Promise.resolve();
+  return new Promise((ok, mal)=>{ const s=document.createElement('script');
+    s.src='https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js'; s.onload=ok; s.onerror=()=>mal(new Error('No se pudo cargar el lector de Excel')); document.head.appendChild(s); });
+}
+function sinTildes(t){ return String(t||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').trim(); }
+async function leerArchivo(){
+  const f=document.getElementById('iArchivo').files[0]; const vista=document.getElementById('iVista');
+  filasImport=[]; document.getElementById('iBoton').disabled=true; document.getElementById('iResultado').textContent='';
+  if(!f) return;
+  vista.textContent='Leyendo archivo…';
+  try{
+    await cargarSheetJS();
+    const libro=XLSX.read(await f.arrayBuffer(), {type:'array'});
+    const hoja=libro.Sheets[libro.SheetNames[0]];
+    const filas=XLSX.utils.sheet_to_json(hoja, {header:1, raw:true, defval:''}).filter(r=>r.some(x=>String(x).trim()!==''));
+    if(!filas.length){ vista.textContent='El archivo está vacío.'; return; }
+    const cab=filas[0].map(sinTildes);
+    const busca=(pal)=>cab.findIndex(h=>pal.some(p=>h.includes(p)));
+    let iNum=busca(['celular','telefono','numero','movil','whatsapp','cel','tel']);
+    let iNom=busca(['nombre','cliente']); const iNot=busca(['nota','observ','comentario']);
+    const iAut=busca(['autoriza','acepta','promo','permiso']); const iEti=busca(['etiqueta']);
+    let datos=filas.slice(1), inicio=2;
+    if(iNum<0){ // sin encabezados: se asume columna A = nombre, B = celular
+      iNom=0; iNum=1; datos=filas; inicio=1;
+      if(filas[0].length<2){ vista.textContent='No encontré una columna de celular. Pon encabezados "Nombre" y "Celular" en la primera fila.'; return; }
+    }
+    filasImport=datos.map((r,k)=>({_fila:k+inicio, numero:r[iNum], nombre:iNom>=0?String(r[iNom]).trim():'',
+      notas:iNot>=0?String(r[iNot]).trim():'', autoriza:iAut>=0?String(r[iAut]).trim():'', etiqueta:iEti>=0?String(r[iEti]).trim().toLowerCase():''}))
+      .filter(r=>String(r.numero).trim()!=='');
+    const ej=filasImport.slice(0,3).map(r=>`${r.nombre||'(sin nombre)'} · ${r.numero}`).join('; ');
+    vista.innerHTML=`<b style="color:var(--txt)">${filasImport.length} clientes encontrados.</b> Ejemplo: ${esc(ej)}`;
+    document.getElementById('iBoton').disabled=!filasImport.length;
+  }catch(e){ vista.textContent='No se pudo leer el archivo: '+e.message; }
+}
+async function importar(){
+  if(!filasImport.length) return;
+  const b=document.getElementById('iBoton'); b.disabled=true; const res=document.getElementById('iResultado'); res.style.color='var(--mut)'; res.textContent='Importando…';
+  try{
+    const j=await api('/api/importar',{method:'POST',body:JSON.stringify({filas:filasImport, origen:document.getElementById('iOrigen').value, autoriza_todos:document.getElementById('iAutoriza').checked})});
+    res.style.color='var(--txt)';
+    res.innerHTML=`<span class="ok">${j.nuevos} clientes nuevos</span> · ${j.actualizados} ya existían (se completaron sus datos)`+
+      (j.total_invalidos?`<br><span style="color:#f2a6a6">${j.total_invalidos} números no válidos, filas: ${j.invalidos.slice(0,15).map(x=>x.fila).join(', ')}${j.total_invalidos>15?'…':''}</span>`:'');
+    filasImport=[]; cargar();
+  }catch(e){ res.style.color='#f2a6a6'; res.textContent='Error: '+e.message; b.disabled=false; }
+}
+
 /* ---------- Campañas ---------- */
 function pintarDestinatarios(){
   const el=document.getElementById('destinatarios');
   if(!campDest.length){ el.innerHTML='Ninguno seleccionado. Ve a <a href="#" onclick="ir(\'clientes\');return false">Clientes</a>, marca las casillas y pulsa "Remarketing a seleccionados".'; return; }
   const abiertos = campDest.filter(n=>{ const c=contactos.find(x=>x.numero===n); return c&&c.ventana_abierta; }).length;
-  el.innerHTML=`<b style="color:var(--txt)">${campDest.length} clientes</b> · ${abiertos} dentro de 24 h (mensaje libre) · ${campDest.length-abiertos} requieren plantilla
+  const sinPermiso = campDest.filter(n=>{ const c=contactos.find(x=>x.numero===n); return c && c.origen!=='WhatsApp' && !c.autoriza; }).length;
+  el.innerHTML=`<b style="color:var(--txt)">${campDest.length} clientes</b> · ${abiertos} dentro de 24 h (mensaje libre) · ${campDest.length-abiertos} requieren plantilla${sinPermiso?` · <span style="color:#f2a6a6">${sinPermiso} sin autorización (no se les enviará)</span>`:''}
     <button class="sec" style="margin-left:8px;padding:4px 10px" onclick="campDest=[];pintarDestinatarios()">Limpiar</button>`;
 }
 function modoCampana(){ const p=document.getElementById('cModo').value==='plantilla'; document.getElementById('cTextoBox').style.display=p?'none':'block'; document.getElementById('cPlantillaBox').style.display=p?'block':'none'; }
