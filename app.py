@@ -10,7 +10,10 @@ Opcionales:
   CLAUDE_MODEL       modelo a usar (por defecto claude-sonnet-5)
   ASESOR_NUMERO      número (con 57) al que se avisa cuando un cliente pide humano
   FOLLOWUP_HORAS     horas de silencio antes del mensaje de remarketing (por defecto 3)
-  CATALOGO_PDF_URL   link público a un PDF del catálogo; si existe, el bot lo adjunta
+  CATALOGO_PDF_URL   link público a un PDF del catálogo (opcional: si hay un
+                     catalogo.pdf en el repositorio, se usa ese automáticamente)
+  PANEL_CLAVE        clave para entrar al panel de conversaciones:
+                     https://incanto-bot.onrender.com/panel?clave=LA_CLAVE
 """
 
 import os
@@ -21,7 +24,11 @@ from collections import OrderedDict
 
 import requests
 from anthropic import Anthropic
-from flask import Flask, request
+import html
+import json
+from datetime import datetime, timedelta, timezone
+
+from flask import Flask, request, send_file, redirect
 
 app = Flask(__name__)
 
@@ -31,8 +38,15 @@ PHONE_NUMBER_ID = os.getenv("PHONE_NUMBER_ID")
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
 CLAUDE_MODEL = os.getenv("CLAUDE_MODEL", "claude-sonnet-5")
 ASESOR_NUMERO = os.getenv("ASESOR_NUMERO", "")
+PANEL_CLAVE = os.getenv("PANEL_CLAVE", "").strip()
+TZ_BOGOTA = timezone(timedelta(hours=-5))
 FOLLOWUP_HORAS = float(os.getenv("FOLLOWUP_HORAS", "3"))
-CATALOGO_PDF_URL = os.getenv("CATALOGO_PDF_URL", "").strip()
+BASE_URL = os.getenv("RENDER_EXTERNAL_URL", "https://incanto-bot.onrender.com").rstrip("/")
+PDF_LOCAL = os.path.join(os.path.dirname(os.path.abspath(__file__)), "catalogo.pdf")
+# Si hay un catalogo.pdf junto a este archivo, el bot lo sirve y lo adjunta solo.
+CATALOGO_PDF_URL = os.getenv("CATALOGO_PDF_URL", "").strip() or (
+    f"{BASE_URL}/catalogo.pdf" if os.path.exists(PDF_LOCAL) else ""
+)
 
 API_URL = f"https://graph.facebook.com/v21.0/{PHONE_NUMBER_ID}/messages"
 claude = Anthropic(api_key=ANTHROPIC_API_KEY)
@@ -235,11 +249,22 @@ def estado_de(numero: str) -> dict:
             "humano_hasta": 0.0,
             "cerrado": False,
             "pdf_enviado": False,
+            "log": [],          # (timestamp, quién, texto) para el panel
+            "no_leidos": 0,
         }
         while len(conversaciones) > MAX_CLIENTES:
             conversaciones.popitem(last=False)
     conversaciones.move_to_end(numero)
     return conversaciones[numero]
+
+
+def registrar(numero: str, quien: str, texto: str) -> None:
+    """Guarda una línea en el historial visible del panel. Llamar con lock."""
+    st = estado_de(numero)
+    st["log"].append((time.time(), quien, texto))
+    st["log"] = st["log"][-200:]
+    if quien == "cliente":
+        st["no_leidos"] += 1
 
 
 def ya_procesado(msg_id: str) -> bool:
@@ -340,6 +365,8 @@ def responder(numero: str, texto_cliente: str) -> None:
         st["followup_sent"] = False
         st["cerrado"] = False
 
+        registrar(numero, "cliente", texto_cliente)
+
         # Si un asesor humano tomó la conversación, el bot se calla un rato.
         if ahora < st["humano_hasta"]:
             st["messages"].append({"role": "user", "content": texto_cliente})
@@ -373,6 +400,7 @@ def responder(numero: str, texto_cliente: str) -> None:
         st = estado_de(numero)
         st["messages"].append({"role": "assistant", "content": respuesta})
         st["messages"] = st["messages"][-MAX_TURNOS:]
+        registrar(numero, "bot", respuesta)
         if cerrado:
             st["cerrado"] = True
         if pide_asesor:
@@ -417,6 +445,7 @@ def hilo_seguimientos():
                         enviar_mensaje(numero, texto)
                         with lock:
                             estado_de(numero)["messages"].append({"role": "assistant", "content": texto})
+                            registrar(numero, "bot (seguimiento)", texto)
                 except Exception as e:
                     print("Error en seguimiento:", e)
         except Exception:
@@ -462,6 +491,9 @@ def recibir_mensaje():
                     elif tipo in ("image", "document"):
                         texto = "(El cliente envió una imagen o archivo, posiblemente un comprobante de pago.)"
                     elif tipo == "audio":
+                        with lock:
+                            registrar(remitente, "cliente", "(nota de voz)")
+                            registrar(remitente, "bot", "Por acá solo alcanzo a leer texto. ¿Me lo escribes? 🙂")
                         enviar_mensaje(remitente, "Por acá solo alcanzo a leer texto. ¿Me lo escribes? 🙂")
                         continue
                     else:
@@ -472,6 +504,142 @@ def recibir_mensaje():
     except Exception as e:
         print("Error procesando webhook:", e)
     return "OK", 200
+
+
+# ===============================================================
+# Panel web: ver conversaciones y responder como humano
+# ===============================================================
+PANEL_CSS = """
+body{font-family:-apple-system,Segoe UI,Roboto,sans-serif;background:#111;color:#eee;margin:0}
+a{color:#9ad}
+.top{padding:14px 18px;background:#1b1b1b;border-bottom:1px solid #333;display:flex;justify-content:space-between;align-items:center}
+.wrap{display:flex;min-height:calc(100vh - 53px)}
+.lista{width:300px;border-right:1px solid #333;overflow:auto}
+.lista a{display:block;padding:12px 16px;border-bottom:1px solid #222;color:#eee;text-decoration:none}
+.lista a.sel{background:#262626}
+.lista small{color:#999;display:block;margin-top:3px}
+.badge{background:#e33;color:#fff;border-radius:10px;padding:0 7px;font-size:12px;margin-left:6px}
+.chat{flex:1;padding:16px;display:flex;flex-direction:column}
+.msgs{flex:1;overflow:auto}
+.m{max-width:70%;padding:9px 12px;border-radius:12px;margin:6px 0;white-space:pre-wrap;line-height:1.35}
+.m.cliente{background:#2b2b2b;margin-right:auto}
+.m.bot{background:#1f3a2a;margin-left:auto}
+.m.asesor{background:#1f2e4a;margin-left:auto}
+.m small{display:block;color:#999;font-size:11px;margin-top:4px}
+form.r{display:flex;gap:8px;margin-top:10px}
+form.r textarea{flex:1;padding:10px;border-radius:8px;border:1px solid #444;background:#1b1b1b;color:#eee;font-size:15px}
+button{padding:10px 16px;border-radius:8px;border:0;background:#2e7d4f;color:#fff;font-size:15px;cursor:pointer}
+button.sec{background:#444}
+.estado{color:#bbb;font-size:13px;margin-bottom:8px}
+@media (max-width:700px){.wrap{flex-direction:column}.lista{width:auto;max-height:40vh;border-right:0;border-bottom:1px solid #333}.m{max-width:90%}}
+"""
+
+
+def _hora(ts: float) -> str:
+    return datetime.fromtimestamp(ts, TZ_BOGOTA).strftime("%d/%m %I:%M %p")
+
+
+def _autorizado() -> bool:
+    return bool(PANEL_CLAVE) and request.args.get("clave", "") == PANEL_CLAVE
+
+
+@app.get("/panel")
+def panel():
+    if not _autorizado():
+        return "Panel desactivado o clave incorrecta. Configura PANEL_CLAVE en Render y entra con ?clave=...", 403
+    clave = PANEL_CLAVE
+    sel = request.args.get("n", "")
+    with lock:
+        items = list(conversaciones.items())[::-1]   # más recientes primero
+        if sel and sel in conversaciones:
+            conversaciones[sel]["no_leidos"] = 0
+            st = conversaciones[sel]
+            log = list(st["log"])
+            humano = time.time() < st["humano_hasta"]
+        else:
+            log, humano, st = [], False, None
+
+    lista = ""
+    for numero, st_i in items:
+        ult = st_i["log"][-1] if st_i["log"] else (0, "", "")
+        badge = f'<span class="badge">{st_i["no_leidos"]}</span>' if st_i["no_leidos"] else ""
+        modo = "👤 humano" if time.time() < st_i["humano_hasta"] else "🤖 bot"
+        lista += (f'<a class="{"sel" if numero == sel else ""}" href="/panel?clave={clave}&n={numero}">'
+                  f'+{numero}{badge}<small>{modo} · {_hora(ult[0]) if ult[0] else ""}</small>'
+                  f'<small>{html.escape(ult[2][:60])}</small></a>')
+    if not lista:
+        lista = '<a href="#">Todavía no hay conversaciones.</a>'
+
+    chat = '<div class="estado">Elige una conversación a la izquierda.</div>'
+    if st is not None:
+        msgs = ""
+        for ts, quien, texto in log:
+            cls = "cliente" if quien == "cliente" else ("asesor" if quien == "asesor" else "bot")
+            msgs += f'<div class="m {cls}">{html.escape(texto)}<small>{quien} · {_hora(ts)}</small></div>'
+        estado = ("👤 Modo humano: el bot NO responde a este cliente hasta " + _hora(st["humano_hasta"])
+                  if humano else "🤖 El bot está respondiendo a este cliente.")
+        chat = f"""
+        <div class="estado">+{sel} — {estado}</div>
+        <div class="msgs" id="msgs">{msgs}</div>
+        <form class="r" method="post" action="/panel/enviar?clave={clave}&n={sel}">
+          <textarea name="texto" rows="2" placeholder="Escribe como asesor… (al enviar, el bot se pausa 6 h con este cliente)"></textarea>
+          <button type="submit">Enviar</button>
+        </form>
+        <form method="post" action="/panel/modo?clave={clave}&n={sel}" style="margin-top:8px">
+          <button class="sec" name="modo" value="{'bot' if humano else 'humano'}" type="submit">
+            {'Devolver al bot' if humano else 'Pausar el bot (tomar yo la conversación)'}
+          </button>
+        </form>"""
+
+    return f"""<!doctype html><html lang="es"><head><meta charset="utf-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1"><title>Incanto · WhatsApp</title>
+    <style>{PANEL_CSS}</style></head><body>
+    <div class="top"><b>Incanto · conversaciones de WhatsApp</b><span>{len(items)} chats · <a href="/panel?clave={clave}{'&n='+sel if sel else ''}">actualizar</a></span></div>
+    <div class="wrap"><div class="lista">{lista}</div><div class="chat">{chat}</div></div>
+    <script>
+      const b=document.getElementById('msgs'); if(b) b.scrollTop=b.scrollHeight;
+      setTimeout(()=>{{ if(!document.activeElement || document.activeElement.tagName!=='TEXTAREA') location.reload(); }}, 20000);
+    </script></body></html>"""
+
+
+@app.post("/panel/enviar")
+def panel_enviar():
+    if not _autorizado():
+        return "No autorizado", 403
+    numero = request.args.get("n", "")
+    texto = (request.form.get("texto") or "").strip()
+    if numero and texto:
+        enviar_mensaje(numero, texto)
+        with lock:
+            st = estado_de(numero)
+            st["humano_hasta"] = time.time() + 6 * 3600
+            st["cerrado"] = True
+            st["messages"].append({"role": "assistant", "content": texto})
+            st["messages"] = st["messages"][-MAX_TURNOS:]
+            registrar(numero, "asesor", texto)
+    return redirect(f"/panel?clave={PANEL_CLAVE}&n={numero}")
+
+
+@app.post("/panel/modo")
+def panel_modo():
+    if not _autorizado():
+        return "No autorizado", 403
+    numero = request.args.get("n", "")
+    modo = request.form.get("modo", "bot")
+    with lock:
+        st = estado_de(numero)
+        if modo == "humano":
+            st["humano_hasta"] = time.time() + 6 * 3600
+            st["cerrado"] = True
+        else:
+            st["humano_hasta"] = 0.0
+            st["cerrado"] = False
+    return redirect(f"/panel?clave={PANEL_CLAVE}&n={numero}")
+
+
+@app.get("/catalogo.pdf")
+def catalogo_pdf():
+    return send_file(PDF_LOCAL, mimetype="application/pdf", download_name="Catalogo-Incanto-2026.pdf")
 
 
 @app.get("/")
