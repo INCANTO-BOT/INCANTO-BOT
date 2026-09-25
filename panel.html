@@ -1,0 +1,357 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Incanto · WhatsApp</title>
+<style>
+:root{--bg:#0f0f10;--bg2:#171718;--bg3:#1f1f21;--line:#2a2a2d;--txt:#ececec;--mut:#9a9a9f;--oro:#c9a961;--oro2:#e2c98a;--verde:#2e7d4f;--rojo:#d9534f;--azul:#2f5c9c}
+*{box-sizing:border-box}
+body{margin:0;font-family:-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;background:var(--bg);color:var(--txt);font-size:15px}
+a{color:var(--oro2)}
+button{font:inherit;cursor:pointer;border:0;border-radius:8px;padding:9px 14px;background:var(--verde);color:#fff}
+button.sec{background:var(--bg3);color:var(--txt);border:1px solid var(--line)}
+button.oro{background:var(--oro);color:#111;font-weight:600}
+button.peligro{background:var(--rojo)}
+button:disabled{opacity:.5;cursor:default}
+input,textarea,select{font:inherit;background:var(--bg2);color:var(--txt);border:1px solid var(--line);border-radius:8px;padding:9px 11px;width:100%}
+textarea{resize:vertical}
+.top{display:flex;align-items:center;gap:14px;padding:12px 18px;background:var(--bg2);border-bottom:1px solid var(--line);position:sticky;top:0;z-index:5}
+.top h1{font-size:17px;margin:0;font-weight:600;letter-spacing:.4px}
+.top h1 span{color:var(--oro);font-weight:700}
+.tabs{display:flex;gap:4px;margin-left:auto}
+.tabs button{background:transparent;color:var(--mut);padding:8px 12px;border-radius:8px}
+.tabs button.act{background:var(--bg3);color:var(--txt)}
+.tabs .n{background:var(--rojo);color:#fff;border-radius:10px;font-size:11px;padding:1px 6px;margin-left:5px}
+.vista{display:none}.vista.act{display:block}
+/* login */
+#login{max-width:380px;margin:80px auto;padding:28px;background:var(--bg2);border:1px solid var(--line);border-radius:14px}
+#login h2{margin:0 0 6px}#login p{color:var(--mut);margin:0 0 16px}
+/* bandeja */
+.wrap{display:flex;height:calc(100vh - 57px)}
+.lista{width:320px;border-right:1px solid var(--line);overflow:auto;background:var(--bg2)}
+.lista .buscar{padding:10px;border-bottom:1px solid var(--line)}
+.item{padding:11px 14px;border-bottom:1px solid var(--line);cursor:pointer;display:flex;flex-direction:column;gap:3px}
+.item:hover{background:var(--bg3)}.item.sel{background:var(--bg3);border-left:3px solid var(--oro)}
+.item b{font-weight:600}.item small{color:var(--mut);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.item .fila{display:flex;justify-content:space-between;align-items:center;gap:6px}
+.badge{background:var(--rojo);color:#fff;border-radius:10px;padding:0 7px;font-size:12px}
+.tag{display:inline-block;font-size:11px;padding:1px 8px;border-radius:10px;background:var(--bg3);border:1px solid var(--line);color:var(--mut)}
+.tag.compró{color:#8fd6a5;border-color:#2e7d4f}.tag.interesado{color:var(--oro2);border-color:var(--oro)}.tag.pide.asesor,.tag.asesor{color:#f2a6a6;border-color:var(--rojo)}
+.chat{flex:1;display:flex;flex-direction:column;min-width:0}
+.chat .cab{padding:10px 16px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:10px;flex-wrap:wrap;background:var(--bg2)}
+.chat .cab .info{flex:1;min-width:180px}
+.chat .cab small{color:var(--mut);display:block}
+.msgs{flex:1;overflow:auto;padding:16px}
+.m{max-width:72%;padding:9px 12px;border-radius:12px;margin:6px 0;white-space:pre-wrap;line-height:1.35;word-wrap:break-word}
+.m.cliente{background:#26262a;margin-right:auto;border-bottom-left-radius:3px}
+.m.bot,.m.seg{background:#1d3a2a;margin-left:auto;border-bottom-right-radius:3px}
+.m.asesor{background:#1e2f4c;margin-left:auto;border-bottom-right-radius:3px}
+.m.campaña{background:#3a2f16;margin-left:auto;border-bottom-right-radius:3px}
+.m small{display:block;color:var(--mut);font-size:11px;margin-top:4px}
+.resp{display:flex;gap:8px;padding:10px 16px;border-top:1px solid var(--line);background:var(--bg2)}
+.vacio{color:var(--mut);padding:40px;text-align:center}
+/* clientes */
+.pad{padding:18px}
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin-bottom:16px}
+.kpi{background:var(--bg2);border:1px solid var(--line);border-radius:12px;padding:12px 14px}
+.kpi b{display:block;font-size:24px;color:var(--oro2)}.kpi span{color:var(--mut);font-size:13px}
+.barra{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px}
+.barra input,.barra select{width:auto;min-width:160px}
+table{width:100%;border-collapse:collapse;background:var(--bg2);border-radius:12px;overflow:hidden}
+th,td{padding:9px 10px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top;font-size:14px}
+th{color:var(--mut);font-weight:500;font-size:12px;text-transform:uppercase;letter-spacing:.5px}
+tr:hover td{background:var(--bg3)}
+td select,td input{padding:5px 8px;font-size:13px}
+.ok{color:#8fd6a5}.no{color:var(--mut)}
+/* campañas */
+.card{background:var(--bg2);border:1px solid var(--line);border-radius:12px;padding:16px;margin-bottom:14px}
+.card h3{margin:0 0 10px;font-size:16px}
+.aviso{background:#2a2410;border:1px solid var(--oro);border-radius:10px;padding:10px 12px;font-size:13px;color:#e8dcb8;margin:10px 0}
+.g2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+label{display:block;color:var(--mut);font-size:13px;margin:8px 0 4px}
+.toast{position:fixed;bottom:18px;left:50%;transform:translateX(-50%);background:#222;border:1px solid var(--oro);padding:10px 16px;border-radius:10px;z-index:9;display:none}
+@media (max-width:760px){
+  .wrap{flex-direction:column;height:auto}
+  .lista{width:auto;max-height:45vh;border-right:0;border-bottom:1px solid var(--line)}
+  .chat{min-height:55vh}.m{max-width:90%}
+  .g2{grid-template-columns:1fr}.top h1{font-size:15px}
+  .oculta-m{display:none}
+}
+</style>
+</head>
+<body>
+<div id="login">
+  <h2>Incanto <span style="color:var(--oro)">·</span> WhatsApp</h2>
+  <p>Panel del número 314 260 3098</p>
+  <input id="clave" type="password" placeholder="Clave del panel" autocomplete="current-password">
+  <div style="margin-top:12px;display:flex;gap:8px"><button class="oro" onclick="entrar()">Entrar</button></div>
+  <p id="loginErr" style="color:#f2a6a6;margin-top:10px"></p>
+</div>
+
+<div id="app" style="display:none">
+  <div class="top">
+    <h1><span>Incanto</span> · WhatsApp</h1>
+    <div class="tabs">
+      <button id="tab-bandeja" class="act" onclick="ir('bandeja')">Bandeja<span class="n" id="nNoLeidos" style="display:none"></span></button>
+      <button id="tab-clientes" onclick="ir('clientes')">Clientes</button>
+      <button id="tab-campanas" onclick="ir('campanas')">Remarketing</button>
+      <button onclick="salir()" title="Salir">⏻</button>
+    </div>
+  </div>
+
+  <!-- BANDEJA -->
+  <div id="v-bandeja" class="vista act">
+    <div class="wrap">
+      <div class="lista">
+        <div class="buscar"><input id="buscarChat" placeholder="Buscar nombre o número…" oninput="pintarLista()"></div>
+        <div id="listaChats"></div>
+      </div>
+      <div class="chat" id="chat">
+        <div class="vacio">Elige una conversación.</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- CLIENTES -->
+  <div id="v-clientes" class="vista">
+    <div class="pad">
+      <div class="kpis" id="kpis"></div>
+      <div class="barra">
+        <input id="buscarCli" placeholder="Buscar…" oninput="pintarClientes()">
+        <select id="filtroEtiqueta" onchange="pintarClientes()"><option value="">Todas las etiquetas</option></select>
+        <select id="filtroVentana" onchange="pintarClientes()">
+          <option value="">Todos</option>
+          <option value="abierta">Se les puede escribir libre (últimas 24 h)</option>
+          <option value="cerrada">Fuera de 24 h (requieren plantilla)</option>
+        </select>
+        <span id="cuentaSel" style="color:var(--mut)"></span>
+        <span style="flex:1"></span>
+        <button class="sec" onclick="exportar()">⬇ Exportar a Excel (CSV)</button>
+        <button class="oro" onclick="remarketingSeleccion()">✉ Remarketing a seleccionados</button>
+      </div>
+      <div style="overflow:auto">
+      <table>
+        <thead><tr>
+          <th><input type="checkbox" id="selTodos" style="width:auto" onchange="seleccionarTodos(this.checked)"></th>
+          <th>Nombre</th><th>Teléfono</th><th>Etiqueta</th><th class="oculta-m">Último mensaje</th><th class="oculta-m">Msgs</th><th>Texto libre</th><th class="oculta-m">Notas</th><th></th>
+        </tr></thead>
+        <tbody id="tbodyCli"></tbody>
+      </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- CAMPAÑAS -->
+  <div id="v-campanas" class="vista">
+    <div class="pad">
+      <div class="card">
+        <h3>Nueva campaña de remarketing</h3>
+        <div class="aviso">
+          <b>Regla de WhatsApp:</b> un mensaje libre solo llega a clientes que te escribieron en las <b>últimas 24 horas</b>.
+          Para los demás debes usar una <b>plantilla aprobada</b> en Meta (Administrador de WhatsApp → Plantillas de mensajes).
+          Escribe <code>{nombre}</code> para poner el nombre del cliente.
+        </div>
+        <label>Destinatarios</label>
+        <div id="destinatarios" style="color:var(--mut);font-size:14px">Ninguno seleccionado. Ve a <a href="#" onclick="ir('clientes');return false">Clientes</a>, marca las casillas y pulsa "Remarketing a seleccionados".</div>
+        <div class="g2">
+          <div><label>Nombre de la campaña</label><input id="cNombre" placeholder="Ej: Promo Coco Mademoiselle"></div>
+          <div><label>Tipo de envío</label>
+            <select id="cModo" onchange="modoCampana()">
+              <option value="texto">Mensaje libre (solo ventana de 24 h)</option>
+              <option value="plantilla">Plantilla aprobada en Meta (a cualquiera)</option>
+            </select></div>
+        </div>
+        <div id="cTextoBox">
+          <label>Mensaje</label>
+          <textarea id="cTexto" rows="4" placeholder="Hola {nombre}, esta semana tenemos 20% en Coco Mademoiselle y La Vie Est Belle. ¿Te aparto una?"></textarea>
+        </div>
+        <div id="cPlantillaBox" style="display:none">
+          <div class="g2">
+            <div><label>Nombre exacto de la plantilla</label><input id="cPlantilla" placeholder="promo_semana"></div>
+            <div><label>Idioma de la plantilla</label><input id="cIdioma" value="es"></div>
+          </div>
+          <label>Variables del cuerpo ({{1}}, {{2}}…), una por línea. Puedes usar {nombre}.</label>
+          <textarea id="cParams" rows="3" placeholder="{nombre}&#10;20%"></textarea>
+        </div>
+        <div style="margin-top:12px;display:flex;gap:8px;align-items:center">
+          <button class="oro" id="btnEnviarCamp" onclick="enviarCampana()">Enviar campaña</button>
+          <span id="cEstado" style="color:var(--mut)"></span>
+        </div>
+      </div>
+      <div class="card">
+        <h3>Historial de campañas</h3>
+        <div id="histCamp" style="color:var(--mut)">Cargando…</div>
+      </div>
+    </div>
+  </div>
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+let CLAVE = '';
+try { CLAVE = sessionStorage.getItem('incanto_clave') || localStorage.getItem('incanto_clave') || ''; } catch(e){}
+let contactos = [], etiquetas = [], resumen = {}, sel = null, seleccion = new Set(), timer = null, campDest = [];
+
+function toast(t){ const e=document.getElementById('toast'); e.textContent=t; e.style.display='block'; setTimeout(()=>e.style.display='none',2600); }
+function esc(s){ return (s||'').replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+function hora(ts){ if(!ts) return ''; const d=new Date(ts*1000); const hoy=new Date(); const mismo=d.toDateString()===hoy.toDateString();
+  const h=d.toLocaleTimeString('es-CO',{hour:'numeric',minute:'2-digit',hour12:true});
+  return mismo? h : d.toLocaleDateString('es-CO',{day:'2-digit',month:'2-digit'})+' '+h; }
+function fmtNum(n){ return '+'+n.replace(/^57(\d{3})(\d{3})(\d{4})$/,'57 $1 $2 $3'); }
+async function api(ruta, opts={}){
+  const r = await fetch(ruta, {...opts, headers:{'Content-Type':'application/json','X-Clave':CLAVE, ...(opts.headers||{})}});
+  if(r.status===401){ salir(); throw new Error('Clave incorrecta'); }
+  const j = await r.json().catch(()=>({}));
+  if(!r.ok) throw new Error(j.error||('Error '+r.status));
+  return j;
+}
+
+async function entrar(){
+  CLAVE = document.getElementById('clave').value.trim();
+  try{ await api('/api/contactos'); }catch(e){ document.getElementById('loginErr').textContent='Clave incorrecta.'; return; }
+  try{ localStorage.setItem('incanto_clave', CLAVE); }catch(e){}
+  iniciar();
+}
+function salir(){ CLAVE=''; try{localStorage.removeItem('incanto_clave');sessionStorage.removeItem('incanto_clave');}catch(e){} clearInterval(timer); document.getElementById('app').style.display='none'; document.getElementById('login').style.display='block'; }
+function iniciar(){ document.getElementById('login').style.display='none'; document.getElementById('app').style.display='block'; cargar(); timer=setInterval(cargar, 12000); }
+document.getElementById('clave').addEventListener('keydown', e=>{ if(e.key==='Enter') entrar(); });
+
+function ir(v){ document.querySelectorAll('.vista').forEach(x=>x.classList.remove('act')); document.querySelectorAll('.tabs button').forEach(x=>x.classList.remove('act'));
+  document.getElementById('v-'+v).classList.add('act'); document.getElementById('tab-'+v).classList.add('act'); if(v==='campanas') cargarCampanas(); }
+
+async function cargar(){
+  try{ const j = await api('/api/contactos'); contactos=j.contactos; etiquetas=j.etiquetas; resumen=j.resumen; }catch(e){ return; }
+  const nl = resumen.sin_leer||0; const b=document.getElementById('nNoLeidos'); b.style.display=nl?'inline':'none'; b.textContent=nl;
+  pintarLista(); pintarKpis(); pintarClientes();
+  if(sel && document.activeElement.tagName!=='TEXTAREA') abrirChat(sel, true);
+}
+
+/* ---------- Bandeja ---------- */
+function pintarLista(){
+  const f=(document.getElementById('buscarChat').value||'').toLowerCase();
+  const el=document.getElementById('listaChats'); el.innerHTML='';
+  const lista = contactos.filter(c=>!f || (c.nombre||'').toLowerCase().includes(f) || c.numero.includes(f));
+  if(!lista.length){ el.innerHTML='<div class="vacio">Todavía no hay conversaciones.</div>'; return; }
+  for(const c of lista){
+    const d=document.createElement('div'); d.className='item'+(c.numero===sel?' sel':''); d.onclick=()=>abrirChat(c.numero);
+    d.innerHTML=`<div class="fila"><b>${esc(c.nombre)||fmtNum(c.numero)}</b><small>${hora(c.ultimo_msg)}</small></div>
+      <div class="fila"><small>${c.nombre?fmtNum(c.numero)+' · ':''}${c.humano?'👤 asesor':'🤖 bot'}</small>${c.no_leidos?`<span class="badge">${c.no_leidos}</span>`:''}</div>
+      <small>${esc(c.ultimo_texto)}</small>`;
+    el.appendChild(d);
+  }
+}
+async function abrirChat(numero, silencioso){
+  sel=numero; if(!silencioso) pintarLista();
+  let j; try{ j=await api('/api/chat/'+numero); }catch(e){ return; }
+  const c=j.contacto; const box=document.getElementById('chat');
+  const local=contactos.find(x=>x.numero===numero); if(local && local.no_leidos){ local.no_leidos=0; resumen.sin_leer=Math.max(0,(resumen.sin_leer||1)-1); pintarLista();
+    const nb=document.getElementById('nNoLeidos'); nb.style.display=resumen.sin_leer?'inline':'none'; nb.textContent=resumen.sin_leer; }
+  const scrollAbajo = !silencioso || (box.querySelector('.msgs') && (box.querySelector('.msgs').scrollTop+box.querySelector('.msgs').clientHeight >= box.querySelector('.msgs').scrollHeight-40));
+  const borrador = box.querySelector('textarea') ? box.querySelector('textarea').value : '';
+  let msgs='';
+  for(const m of j.mensajes){ const cls = m.quien==='cliente'?'cliente': m.quien==='asesor'?'asesor': m.quien==='campaña'?'campaña': m.quien.includes('seguimiento')?'seg':'bot';
+    msgs+=`<div class="m ${cls}">${esc(m.texto)}<small>${esc(m.quien)} · ${hora(m.ts)}</small></div>`; }
+  const opciones = etiquetas.map(e=>`<option ${e===c.etiqueta?'selected':''}>${e}</option>`).join('');
+  box.innerHTML=`
+    <div class="cab">
+      <div class="info"><b>${esc(c.nombre)||'Sin nombre'}</b> <a href="https://wa.me/${c.numero}" target="_blank" style="font-size:13px">${fmtNum(c.numero)}</a>
+        <small>${c.humano?'👤 Modo asesor: el bot no responde hasta '+hora(c.humano_hasta):'🤖 El bot está respondiendo'} · ${c.ventana_abierta?'<span class="ok">ventana 24 h abierta</span>':'<span class="no">fuera de 24 h</span>'}</small></div>
+      <select style="width:auto" onchange="guardarContacto('${c.numero}',{etiqueta:this.value})">${opciones}</select>
+      <button class="sec" onclick="modo('${c.numero}','${c.humano?'bot':'humano'}')">${c.humano?'Devolver al bot':'Pausar el bot (yo respondo)'}</button>
+      <button class="sec" onclick="editarNombre('${c.numero}','${esc(c.nombre)}')">✎ Nombre</button>
+    </div>
+    <div class="msgs" id="msgs">${msgs||'<div class="vacio">Sin mensajes.</div>'}</div>
+    <div class="resp"><textarea id="txtResp" rows="2" placeholder="Escribe como asesor… (al enviar, el bot se pausa 6 h con este cliente)">${esc(borrador)}</textarea><button onclick="enviar('${c.numero}')">Enviar</button></div>`;
+  const ms=document.getElementById('msgs'); if(scrollAbajo) ms.scrollTop=ms.scrollHeight;
+  document.getElementById('txtResp').addEventListener('keydown', e=>{ if(e.key==='Enter' && !e.shiftKey){ e.preventDefault(); enviar(c.numero); } });
+}
+async function enviar(numero){
+  const t=document.getElementById('txtResp'); const texto=t.value.trim(); if(!texto) return;
+  t.disabled=true;
+  try{ await api('/api/enviar',{method:'POST',body:JSON.stringify({numero,texto})}); t.value=''; await abrirChat(numero); await cargar(); }
+  catch(e){ toast('No se pudo enviar: '+e.message); }
+  t.disabled=false;
+}
+async function modo(numero, m){ await api('/api/modo',{method:'POST',body:JSON.stringify({numero,modo:m})}); abrirChat(numero); cargar(); }
+async function guardarContacto(numero, cambios){ try{ await api('/api/contacto',{method:'POST',body:JSON.stringify({numero,...cambios})}); toast('Guardado'); cargar(); }catch(e){ toast(e.message); } }
+function editarNombre(numero, actual){ const n=prompt('Nombre del cliente:', actual||''); if(n!==null) guardarContacto(numero,{nombre:n}); }
+
+/* ---------- Clientes ---------- */
+function pintarKpis(){
+  document.getElementById('kpis').innerHTML = `
+    <div class="kpi"><b>${resumen.total||0}</b><span>clientes en la base</span></div>
+    <div class="kpi"><b>${resumen.hoy||0}</b><span>escribieron en 24 h</span></div>
+    <div class="kpi"><b>${resumen.ventana||0}</b><span>se les puede escribir libre</span></div>
+    <div class="kpi"><b>${resumen.compraron||0}</b><span>compraron</span></div>
+    <div class="kpi"><b>${resumen.sin_leer||0}</b><span>chats sin leer</span></div>`;
+  const s=document.getElementById('filtroEtiqueta'); if(s.options.length<=1) for(const e of etiquetas){ const o=document.createElement('option'); o.value=e; o.textContent=e; s.appendChild(o); }
+}
+function clientesFiltrados(){
+  const f=(document.getElementById('buscarCli').value||'').toLowerCase(); const et=document.getElementById('filtroEtiqueta').value; const v=document.getElementById('filtroVentana').value;
+  return contactos.filter(c => (!f || (c.nombre||'').toLowerCase().includes(f) || c.numero.includes(f) || (c.notas||'').toLowerCase().includes(f))
+    && (!et || c.etiqueta===et) && (!v || (v==='abierta')===c.ventana_abierta));
+}
+function pintarClientes(){
+  const tb=document.getElementById('tbodyCli'); tb.innerHTML='';
+  for(const c of clientesFiltrados()){
+    const tr=document.createElement('tr');
+    tr.innerHTML=`<td><input type="checkbox" style="width:auto" ${seleccion.has(c.numero)?'checked':''} onchange="marcar('${c.numero}',this.checked)"></td>
+      <td><input value="${esc(c.nombre)}" placeholder="Sin nombre" onchange="guardarContacto('${c.numero}',{nombre:this.value})"></td>
+      <td><a href="#" onclick="sel='${c.numero}';ir('bandeja');abrirChat('${c.numero}');return false">${fmtNum(c.numero)}</a></td>
+      <td><select onchange="guardarContacto('${c.numero}',{etiqueta:this.value})">${etiquetas.map(e=>`<option ${e===c.etiqueta?'selected':''}>${e}</option>`).join('')}</select></td>
+      <td class="oculta-m"><small style="color:var(--mut)">${hora(c.ultimo_msg)}</small><br><small>${esc((c.ultimo_texto||'').slice(0,50))}</small></td>
+      <td class="oculta-m">${c.total_msgs}</td>
+      <td>${c.ventana_abierta?'<span class="ok">✓ hasta '+hora(c.ventana_hasta)+'</span>':'<span class="no">plantilla</span>'}</td>
+      <td class="oculta-m"><input value="${esc(c.notas)}" placeholder="Notas…" onchange="guardarContacto('${c.numero}',{notas:this.value})"></td>
+      <td><a href="https://wa.me/${c.numero}" target="_blank" title="Abrir en WhatsApp">↗</a></td>`;
+    tb.appendChild(tr);
+  }
+  document.getElementById('cuentaSel').textContent = seleccion.size? seleccion.size+' seleccionados' : '';
+}
+function marcar(n, on){ on?seleccion.add(n):seleccion.delete(n); document.getElementById('cuentaSel').textContent = seleccion.size? seleccion.size+' seleccionados':''; }
+function seleccionarTodos(on){ for(const c of clientesFiltrados()) on?seleccion.add(c.numero):seleccion.delete(c.numero); pintarClientes(); }
+function exportar(){ window.open('/exportar.csv?clave='+encodeURIComponent(CLAVE), '_blank'); }
+function remarketingSeleccion(){
+  if(!seleccion.size){ toast('Marca al menos un cliente'); return; }
+  campDest=[...seleccion]; ir('campanas'); pintarDestinatarios();
+}
+
+/* ---------- Campañas ---------- */
+function pintarDestinatarios(){
+  const el=document.getElementById('destinatarios');
+  if(!campDest.length){ el.innerHTML='Ninguno seleccionado. Ve a <a href="#" onclick="ir(\'clientes\');return false">Clientes</a>, marca las casillas y pulsa "Remarketing a seleccionados".'; return; }
+  const abiertos = campDest.filter(n=>{ const c=contactos.find(x=>x.numero===n); return c&&c.ventana_abierta; }).length;
+  el.innerHTML=`<b style="color:var(--txt)">${campDest.length} clientes</b> · ${abiertos} dentro de 24 h (mensaje libre) · ${campDest.length-abiertos} requieren plantilla
+    <button class="sec" style="margin-left:8px;padding:4px 10px" onclick="campDest=[];pintarDestinatarios()">Limpiar</button>`;
+}
+function modoCampana(){ const p=document.getElementById('cModo').value==='plantilla'; document.getElementById('cTextoBox').style.display=p?'none':'block'; document.getElementById('cPlantillaBox').style.display=p?'block':'none'; }
+async function enviarCampana(){
+  if(!campDest.length){ toast('Selecciona clientes primero'); return; }
+  const modo=document.getElementById('cModo').value;
+  const body={numeros:campDest, modo, nombre:document.getElementById('cNombre').value, texto:document.getElementById('cTexto').value,
+    plantilla:document.getElementById('cPlantilla').value, idioma:document.getElementById('cIdioma').value,
+    params:document.getElementById('cParams').value.split('\n').map(s=>s.trim()).filter(Boolean)};
+  if(!confirm(`¿Enviar a ${campDest.length} clientes?`)) return;
+  const b=document.getElementById('btnEnviarCamp'); b.disabled=true; document.getElementById('cEstado').textContent='Enviando…';
+  try{ const j=await api('/api/campana',{method:'POST',body:JSON.stringify(body)});
+    document.getElementById('cEstado').textContent=`Listo: ${j.enviados} enviados, ${j.fallidos} no enviados.`; campDest=[]; seleccion.clear(); pintarDestinatarios(); cargarCampanas(); cargar(); }
+  catch(e){ document.getElementById('cEstado').textContent='Error: '+e.message; }
+  b.disabled=false;
+}
+async function cargarCampanas(){
+  let j; try{ j=await api('/api/campanas'); }catch(e){ return; }
+  const el=document.getElementById('histCamp');
+  if(!j.campanas.length){ el.textContent='Todavía no has enviado campañas.'; return; }
+  el.innerHTML = j.campanas.map(c=>`<div style="padding:10px 0;border-bottom:1px solid var(--line)">
+    <b style="color:var(--txt)">${esc(c.nombre)}</b> <small>· ${hora(c.ts)} · ${c.modo}</small><br>
+    <small>${esc((c.contenido||'').slice(0,160))}</small><br>
+    <span class="ok">${c.enviados} enviados</span> · <span style="color:#f2a6a6">${c.fallidos} fallidos</span>
+    ${c.detalle.filter(d=>!d.ok).slice(0,5).map(d=>`<br><small>· ${fmtNum(d.numero)}: ${esc(d.error)}</small>`).join('')}
+  </div>`).join('');
+}
+
+if(CLAVE){ iniciar(); }
+</script>
+</body>
+</html>
