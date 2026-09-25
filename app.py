@@ -249,12 +249,36 @@ if DATABASE_URL:
     from psycopg.rows import dict_row
     from psycopg_pool import ConnectionPool
 
+    from psycopg_pool import PoolTimeout
+
     _url = DATABASE_URL.replace("postgres://", "postgresql://", 1)
-    # check: revisa cada conexión antes de usarla (Neon cierra las que quedan quietas)
-    pool = ConnectionPool(_url, min_size=1, max_size=8, open=True, max_idle=240,
-                          check=ConnectionPool.check_connection,
-                          kwargs={"row_factory": dict_row, "autocommit": True})
+    # connect_timeout: si Neon no contesta, el intento falla rápido en vez de quedar
+    # colgado para siempre (eso dejaba el pool "seco" y todo daba PoolTimeout).
+    # keepalives: detecta conexiones muertas cuando Neon suspende la base.
+    _extras = {"connect_timeout": "10", "keepalives": "1", "keepalives_idle": "30",
+               "keepalives_interval": "10", "keepalives_count": "3"}
+    for _k, _v in _extras.items():
+        if f"{_k}=" not in _url:
+            _url += ("&" if "?" in _url else "?") + f"{_k}={_v}"
+
+    def _nuevo_pool():
+        return ConnectionPool(_url, min_size=1, max_size=8, open=True, timeout=20,
+                              max_idle=120, max_lifetime=600, reconnect_timeout=60,
+                              check=ConnectionPool.check_connection,
+                              kwargs={"row_factory": dict_row, "autocommit": True})
+
+    pool = _nuevo_pool()
+    _pool_lock = threading.Lock()
     PK_AUTO = "BIGSERIAL PRIMARY KEY"
+
+    def _reiniciar_pool(motivo):
+        """Descarta el pool dañado y crea uno nuevo (sin tener que reiniciar Render)."""
+        global pool
+        with _pool_lock:
+            viejo = pool
+            print("BD: reiniciando el pool de conexiones por:", motivo)
+            pool = _nuevo_pool()
+        threading.Thread(target=lambda: viejo.close(timeout=5), daemon=True).start()
 
     @contextmanager
     def _conexion():
@@ -262,13 +286,19 @@ if DATABASE_URL:
             yield c
 
     def q(sql, params=(), fetch=None):
-        with _conexion() as c:
-            cur = c.execute(sql, params)
-            if fetch == "one":
-                return cur.fetchone()
-            if fetch == "all":
-                return cur.fetchall()
-            return None
+        for intento in (1, 2):
+            try:
+                with _conexion() as c:
+                    cur = c.execute(sql, params)
+                    if fetch == "one":
+                        return cur.fetchone()
+                    if fetch == "all":
+                        return cur.fetchall()
+                    return None
+            except (PoolTimeout, psycopg.OperationalError, psycopg.InterfaceError) as e:
+                if intento == 2:
+                    raise
+                _reiniciar_pool(e)
 else:
     import sqlite3
 
@@ -608,7 +638,9 @@ def recibir_mensaje():
                 for msg in value.get("messages", []):
                     if ya_procesado(msg.get("id")):
                         continue
-                    remitente = msg["from"]
+                    remitente = msg.get("from")
+                    if not remitente:      # avisos de estado (entregado/leído) no traen remitente
+                        continue
                     nombre = nombres.get(remitente, "")
                     tipo = msg.get("type")
                     marcar_leido(msg.get("id", ""))
