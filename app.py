@@ -250,7 +250,9 @@ if DATABASE_URL:
     from psycopg_pool import ConnectionPool
 
     _url = DATABASE_URL.replace("postgres://", "postgresql://", 1)
-    pool = ConnectionPool(_url, min_size=1, max_size=8, open=True,
+    # check: revisa cada conexión antes de usarla (Neon cierra las que quedan quietas)
+    pool = ConnectionPool(_url, min_size=1, max_size=8, open=True, max_idle=240,
+                          check=ConnectionPool.check_connection,
                           kwargs={"row_factory": dict_row, "autocommit": True})
     PK_AUTO = "BIGSERIAL PRIMARY KEY"
 
@@ -329,9 +331,12 @@ def crear_tablas():
     # Columnas nuevas (clientes agregados a mano desde las islas)
     for col, tipo in (("origen", "TEXT DEFAULT 'WhatsApp'"), ("autoriza", "INTEGER DEFAULT 0")):
         try:
-            q(f"ALTER TABLE contactos ADD COLUMN {col} {tipo}")
-        except Exception:
-            pass   # ya existía
+            if DATABASE_URL:
+                q(f"ALTER TABLE contactos ADD COLUMN IF NOT EXISTS {col} {tipo}")
+            else:
+                q(f"ALTER TABLE contactos ADD COLUMN {col} {tipo}")
+        except Exception as e:
+            print(f"Aviso al crear la columna {col}:", e)
 
 
 crear_tablas()
@@ -661,6 +666,16 @@ def _fila_contacto(c: dict) -> dict:
         "ventana_hasta": uc + VENTANA_24H if uc else 0,
         "origen": c.get("origen") or "WhatsApp", "autoriza": bool(c.get("autoriza")),
     }
+
+
+@app.errorhandler(Exception)
+def _error_api(e):
+    """Muestra en el panel el motivo real del error (en vez de un 'Error 500' sin explicación)."""
+    from werkzeug.exceptions import HTTPException
+    if isinstance(e, HTTPException):
+        return e
+    traceback.print_exc()
+    return jsonify(error=f"Error del servidor ({type(e).__name__}): {e}"[:300]), 500
 
 
 @app.get("/api/contactos")
