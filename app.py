@@ -17,6 +17,10 @@ Opcionales:
   PAUSA_ASESOR_HORAS horas que el bot se calla cuando un asesor responde (2)
   CATALOGO_PDF_URL   link público a un PDF del catálogo (si hay catalogo.pdf en
                      el repositorio, se usa ese automáticamente)
+  CATALOGO_WEB_URL   archivo de productos de la página web (por defecto
+                     www.incantoperfumeria.com/catalogo-data.js). El bot lo relee
+                     cada CATALOGO_SYNC_HORAS horas (6) y al arrancar, así lo que
+                     se activa o desactiva en la web se refleja en el bot.
 """
 
 import os
@@ -55,7 +59,9 @@ CATALOGO_PDF_URL = os.getenv("CATALOGO_PDF_URL", "").strip() or (
 )
 VENTANA_24H = 24 * 3600      # WhatsApp solo permite texto libre 24 h después del último mensaje del cliente
 ETIQUETAS = ["nuevo", "interesado", "cotizó", "compró", "pide asesor", "frío"]
-ORIGENES = ["WhatsApp", "Isla Villacentro", "Isla Yopal", "Página web", "Otro"]
+ORIGENES = ["WhatsApp", "Isla Villacentro", "Página web", "Otro"]
+CATALOGO_WEB_URL = os.getenv("CATALOGO_WEB_URL", "https://www.incantoperfumeria.com/catalogo-data.js")
+CATALOGO_SYNC_HORAS = float(os.getenv("CATALOGO_SYNC_HORAS", "6"))   # cada cuántas horas se relee la web
 
 API_URL = f"https://graph.facebook.com/v21.0/{PHONE_NUMBER_ID}/messages"
 claude = Anthropic(api_key=ANTHROPIC_API_KEY)
@@ -74,14 +80,15 @@ PÁGINA WEB (catálogo completo con fotos, compra en línea y pago con tarjeta,
 PSE, Addi o Sistecrédito): www.incantoperfumeria.com
 - Cuando pidan "el catálogo", "la lista", "fotos" o "qué tienen", comparte
   ese link y, además, pregunta qué busca para recomendarle directo.
-- En la web hay 20% de descuento de bienvenida para clientes nuevos que se
-  registran (una sola vez por cliente, no acumulable con otras promos).
+- No existe descuento de bienvenida ni descuento por primera compra: nunca lo
+  menciones. Las únicas promociones válidas son las que aparecen en el
+  catálogo de abajo.
 
-PUNTOS DE VENTA:
-- Isla en el Centro Comercial Villacentro, Villavicencio (Meta).
-- Isla en Unicentro, Yopal (Casanare).
+PUNTO DE VENTA (único):
+- Isla en el Centro Comercial Villacentro, Villavicencio (Meta). No hay
+  tiendas en otras ciudades; a otras ciudades se envía por transportadora.
 
-HORARIO (ambas islas):
+HORARIO DE LA ISLA:
 - Lunes a sábado: 10:00 am a 8:00 pm.
 - Domingos y festivos: 11:00 am a 7:00 pm.
 
@@ -108,14 +115,16 @@ CATÁLOGO Y PRECIOS:
 {CATALOGO}
 """
 
-CATALOGO = """
+# Catálogo de respaldo: solo se usa si nunca se ha podido leer la página web.
+# El catálogo real se lee de www.incantoperfumeria.com (ver sincronizar_catalogo).
+CATALOGO_RESPALDO = """
 PRECIOS (iguales para cualquier referencia):
 - Perfume 50 ml: $38.000
 - Perfume 100 ml: $68.000
 - Crema corporal perfumada 250 g (con la esencia que el cliente elija): $30.000
 - Fijador de aromas 30 ml (almizcle blanco, alarga la duración): $25.000
 - Splash para el hogar 250 ml (salas, habitaciones, baños, oficina, carro): $30.000
-- PROMOCIÓN ACTUAL (−20%, 50 ml a $30.500): Coco Mademoiselle, La Vie Est
+- PROMOCIÓN ACTUAL (−20%, 50 ml a $30.400): Coco Mademoiselle, La Vie Est
   Belle, Yara, Aventus, Sauvage, Eros, Baccarat Rouge 540, Khamrah Qahwa.
 
 REFERENCIAS DISPONIBLES (148). Formato: nombre (casa que inspira).
@@ -184,7 +193,7 @@ PERSONALIDAD Y TONO
 - Hablas como un vendedor experto en perfumería: conoces de notas olfativas
   (salida, corazón, fondo), familias (cítrica, amaderada, oriental, floral,
   fougère), concentración, fijación y proyección, y sabes recomendar según la
-  ocasión, el clima (Villavicencio y Yopal son calurosos) y el gusto del cliente.
+  ocasión, el clima (Villavicencio es caluroso) y el gusto del cliente.
 - Tono casual y cercano: tuteas, hablas natural, como una persona de confianza
   que sabe de lo que habla. Nada de frases acartonadas ni de robot.
 - Pero SERIO y PROFESIONAL: no eres fastidioso, no exageras, no usas más de un
@@ -195,22 +204,70 @@ PERSONALIDAD Y TONO
 - Haz UNA pregunta a la vez para entender qué busca el cliente (para quién es,
   qué fragancias le gustan o usa, para el día o la noche, presupuesto).
 
-VENTA
-- Tu objetivo es vender y fidelizar, con elegancia. Recomienda con criterio,
-  explica por qué esa esencia le va a gustar y cierra: pregunta cuál se lleva,
-  cómo prefiere recibirlo (recoger en la isla o domicilio) y comparte los
-  medios de pago cuando confirme.
-- Vende siempre algo más de forma natural (cross-selling): si lleva una
-  esencia, sugiere la crema del mismo aroma para que dure más, o una segunda
-  fragancia para otra ocasión, o un detalle para regalar. Sin insistir si dice
-  que no.
+VENTA: LEE LA INTENCIÓN Y ACTÚA
+Tu objetivo es vender y fidelizar, con elegancia. Antes de responder, detecta
+en qué momento está el cliente y responde según eso (nunca lo digas en voz
+alta, solo actúa):
+- CURIOSEANDO ("qué venden", "hola", "info", "qué tienen"): despierta el
+  interés. Una frase que enganche (esencias de alta concentración inspiradas
+  en las fragancias más famosas, desde $38.000) y UNA pregunta que lo
+  clasifique: ¿para él, para ella o para regalar? ¿qué fragancia usa o le
+  gusta?
+- COMPRANDO / INDECISO ("cuál me recomiendas", "no sé cuál"): ayúdale a
+  decidir. Máximo 2 o 3 opciones con una razón concreta cada una, di cuál
+  elegirías tú y por qué, y cierra preguntando cuál se lleva.
+- PREGUNTA PRECIOS: da el precio de inmediato, pegado a un producto concreto y
+  a sus beneficios (concentración, duración, comparación con el original) y
+  cierra: "¿te lo aparto en 50 o en 100 ml?". Nunca sueltes el precio sin un
+  beneficio ni sin una pregunta de cierre.
+- PREGUNTA DISPONIBILIDAD ("¿tienen X?", "¿les queda X?"): intención de compra
+  ALTA. Si está en el catálogo, confirma con seguridad, di el precio, y ofrece
+  apartarlo ya: ¿recoge en la isla o se lo envías? Si no está, ofrece de una
+  vez 2 alternativas de la misma familia olfativa.
+- PREGUNTA ENVÍOS: trátalo como cliente decidido. Responde costo y tiempo
+  exactos, y pasa directo a concretar: ¿a qué ciudad?, ¿qué referencia y en
+  qué tamaño? Comparte los medios de pago en cuanto confirme.
+- PREGUNTA MEDIOS DE PAGO: comparte los medios de pago de una vez (sin
+  preguntar antes qué quiere) y cierra: qué lleva, dónde lo recibe y que envíe
+  el comprobante por este chat.
+- PREGUNTA POR UNA REFERENCIA CONCRETA: no le vendas desde cero ni le hagas
+  el cuestionario. Confirma, descríbela en una línea, di el precio y avanza a
+  la compra (tamaño, entrega, pago).
+- DICE QUE LE GUSTA ALGO: aprovecha el interés en ese momento: apártalo,
+  suma la crema o el fijador del mismo aroma. Si lo que le gusta no lo
+  manejas, ofrece inmediatamente una alternativa parecida y explica por qué
+  se le va a parecer (notas y familia).
+- SE FRENA O DUDA ("lo pienso", "después", "está caro", silencio tras el
+  precio): descubre la objeción con UNA pregunta amable (¿es el precio, el
+  tamaño, la duración, no está seguro del aroma?) y resuélvela con un
+  argumento real: 50 ml para probar, duración, envío gratis desde $110.000,
+  pago a cuotas en la web, cambio si llega mal.
+- CLIENTE QUE VUELVE (en el historial ya compró o cotizó): reconoce lo que
+  llevó o miró, pregúntale cómo le fue y proponle algo nuevo relacionado (otra
+  referencia de la misma familia, la crema de su esencia, una para regalar).
+- DESAPARECE DESPUÉS DE MOSTRAR INTERÉS: cuando retome, retoma exactamente
+  donde quedaron, sin reproches ni presión.
+
+SÉ PROACTIVO (no esperes a que el cliente pregunte):
+- Detecta oportunidades de REGALO: fechas (cumpleaños, aniversario, Día de la
+  Madre, Amor y Amistad, Navidad), "es para mi novia/mamá/papá". Ofrece la
+  opción con presentación de regalo y sugiere el complemento.
+- Sube el ticket con naturalidad y SIN interrumpir el cierre: cuando ya eligió
+  y antes del pago, UNA sugerencia corta: la crema del mismo aroma para que
+  dure más ($30.000), el fijador ($25.000), el 100 ml en vez del 50 ml (sale
+  mejor por ml), o una segunda esencia para completar el envío gratis desde
+  $110.000. Si dice que no, sigue con el cierre sin insistir.
 - Menciona ventajas reales: alta concentración, duración, precio frente al
   original, presentación para regalo.
 
 REGLAS
-- Usa SOLO la información del negocio que aparece abajo. Si no sabes un dato
-  (un precio exacto, disponibilidad de una esencia), no lo inventes: di que lo
-  confirmas con un asesor y sigue la conversación.
+- Usa SOLO la información del negocio que aparece abajo. El catálogo de abajo
+  se actualiza automáticamente desde la página web y es la ÚNICA fuente de qué
+  referencias hay disponibles: si una referencia no está en la lista, no la
+  manejas por ahora. Si no sabes un dato, no lo inventes: di que lo confirmas
+  con un asesor y sigue la conversación.
+- No existe descuento por primera compra ni por registrarse. Nunca ofrezcas
+  descuentos ni promociones que no estén en el catálogo de abajo.
 - No hay pago contra entrega. Si lo piden, explícalo con amabilidad y ofrece
   los medios de pago.
 - Si el cliente pide hablar con una persona, se molesta, tiene un reclamo o
@@ -231,15 +288,173 @@ REGLAS
   asistente virtual de Incanto y que un asesor humano también está disponible.
 
 INFORMACIÓN DEL NEGOCIO
-""" + INFO_NEGOCIO.replace("{CATALOGO}", CATALOGO)
+"""
 
 FOLLOWUP_PROMPT = """
 El cliente lleva varias horas sin responder. Escribe UN solo mensaje corto de
-seguimiento (máximo 3 líneas), casual y sin presión, que retome lo último que
-estaban hablando y le dé una razón sencilla para responder (por ejemplo,
-resolver una duda, apartar la esencia, o un beneficio de comprar hoy). No
-inventes promociones ni descuentos. No uses más de un emoji.
+seguimiento (máximo 3 líneas), casual y sin presión, que retome exactamente lo
+último que estaban hablando: si quedó en una duda, resuélvela; si le gustó una
+esencia, ofrécele apartarla; si se frenó por algo (precio, tamaño, aroma), da
+un argumento real que lo destrabe (50 ml para probar, envío gratis desde
+$110.000, cuotas en la web). No inventes promociones ni descuentos, no repitas
+lo que ya dijiste y no suenes a mensaje masivo. No uses más de un emoji.
 """
+
+
+# ===============================================================
+# Catálogo en vivo: se lee de www.incantoperfumeria.com/catalogo-data.js
+# (el mismo archivo que alimenta la página web). Lo que David quita de la web
+# desaparece del bot y lo que agrega aparece, sin tocar este código.
+# ===============================================================
+CATALOGO_ESTADO = {"texto": CATALOGO_RESPALDO, "fuente": "respaldo", "ts": 0,
+                   "referencias": 0, "error": "", "hash": ""}
+_catalogo_lock = threading.Lock()
+
+
+def _js_sin_comentarios(js: str) -> str:
+    """Quita comentarios /* */ y líneas // (así una referencia comentada en la web
+    cuenta como no disponible)."""
+    js = re.sub(r"/\*.*?\*/", "", js, flags=re.S)
+    return "\n".join(l for l in js.splitlines() if not l.strip().startswith("//"))
+
+
+def _parsear_objeto_js(cuerpo: str) -> dict:
+    """Convierte el interior de un objeto JS sencillo { ref: "x", pct: 20, oculto: true } en dict."""
+    d = {}
+    for k, v in re.findall(r'(\w+)\s*:\s*"((?:[^"\\]|\\.)*)"', cuerpo):
+        d[k] = v.replace('\\"', '"')
+    for k, v in re.findall(r"(\w+)\s*:\s*(\d+(?:\.\d+)?)(?=\s*[,}])", cuerpo):
+        d.setdefault(k, float(v) if "." in v else int(v))
+    for k, v in re.findall(r"(\w+)\s*:\s*(true|false)", cuerpo):
+        d.setdefault(k, v == "true")
+    return d
+
+
+def parsear_catalogo_web(js: str) -> dict:
+    """Extrae perfumes, precios, sale y acordes del archivo catalogo-data.js."""
+    js = _js_sin_comentarios(js)
+    perfumes = []
+    for m in re.finditer(r"\{([^{}]*?\bref\s*:\s*\"[^\"]+\"[^{}]*)\}", js):
+        p = _parsear_objeto_js(m.group(1))
+        if not p.get("nombre") or not p.get("ref"):
+            continue                                   # es una entrada de SALE u otra cosa
+        nombre = p["nombre"].strip()
+        if (p.get("sinFoto") or p.get("precio50") is not None or "prueba" in nombre.lower()
+                or p.get("oculto") or p.get("agotado") or p.get("disponible") is False
+                or p.get("activo") is False):
+            continue                                   # producto de prueba u oculto
+        perfumes.append(p)
+    acordes = {}
+    for ref, lista in re.findall(r'ACORDES\[\s*"([^"]+)"\s*\]\s*=\s*\[([^\]]*)\]', js):
+        acordes[ref] = [a for a in re.findall(r'"([^"]+)"', lista)]
+    precios = {}
+    m = re.search(r"PRECIOS\s*=\s*\{([^}]*)\}", js)
+    if m:
+        for k, v in re.findall(r"(\w+)\s*:\s*(\d+)", m.group(1)):
+            precios[k] = int(v)
+    sale = {}
+    m = re.search(r"SALE\s*=\s*\[(.*?)\]\s*;", js, flags=re.S)
+    if m:
+        for ref, pct in re.findall(r'ref\s*:\s*"([^"]+)"\s*,\s*pct\s*:\s*(\d+)', m.group(1)):
+            sale[ref] = int(pct)
+    return {"perfumes": perfumes, "acordes": acordes, "precios": precios, "sale": sale}
+
+
+def _cop(n) -> str:
+    return "$" + f"{int(round(n)):,}".replace(",", ".")
+
+
+def texto_catalogo(datos: dict) -> str:
+    """Convierte los datos de la web en el bloque de catálogo que lee el bot."""
+    pr = datos["precios"]
+    p50, p100 = pr.get("p50", 38000), pr.get("p100", 68000)
+    crema, splash, almizcle = pr.get("crema", 30000), pr.get("splash", 30000), pr.get("almizcle", 25000)
+    perfumes = [p for p in datos["perfumes"] if p.get("cat") in ("Hombre", "Mujer", "Unisex")]
+    otros = [p for p in datos["perfumes"] if p.get("cat") not in ("Hombre", "Mujer", "Unisex")]
+    por_ref = {p["ref"]: p for p in perfumes}
+    out = [f"PRECIOS (iguales para cualquier referencia):",
+           f"- Perfume 50 ml: {_cop(p50)}",
+           f"- Perfume 100 ml: {_cop(p100)}",
+           f"- Crema corporal perfumada 250 g (con la esencia que el cliente elija): {_cop(crema)}",
+           f"- Fijador de aromas 30 ml (almizcle blanco, alarga la duración): {_cop(almizcle)}",
+           f"- Splash para el hogar 250 ml (salas, habitaciones, baños, oficina, carro): {_cop(splash)}"]
+    en_sale = [(por_ref[r], pct) for r, pct in datos["sale"].items() if r in por_ref]
+    if en_sale:
+        out.append("- EN PROMOCIÓN AHORA (descuento sobre 50 y 100 ml):")
+        for p, pct in en_sale:
+            out.append(f"  · {p['nombre']} ({p['casa']}): -{pct}% → 50 ml {_cop(p50 * (100 - pct) / 100)}, "
+                       f"100 ml {_cop(p100 * (100 - pct) / 100)}")
+    else:
+        out.append("- No hay promociones vigentes en este momento.")
+    out.append("")
+    out.append(f"REFERENCIAS DISPONIBLES HOY ({len(perfumes)}). Formato: nombre (casa que inspira) · "
+               f"familia olfativa · notas principales · descripción.")
+    for cat in ("Mujer", "Hombre", "Unisex"):
+        grupo = [p for p in perfumes if p["cat"] == cat]
+        if not grupo:
+            continue
+        out.append("")
+        out.append(f"{cat.upper()} ({len(grupo)}):")
+        for p in grupo:
+            notas = ", ".join(datos["acordes"].get(p["ref"], [])[:5])
+            linea = f"- {p['nombre']} ({p.get('casa', '')})"
+            if p.get("familia"):
+                linea += f" · {p['familia']}"
+            if notas:
+                linea += f" · {notas}"
+            if p.get("desc"):
+                linea += f" · {p['desc']}"
+            out.append(linea)
+    if otros:
+        out.append("")
+        out.append("OTROS PRODUCTOS: " + ", ".join(f"{p['nombre']} ({p.get('cat', '')})" for p in otros))
+    out.append("")
+    out.append("Si piden una referencia que NO está en esta lista, di con honestidad que "
+               "por ahora no la manejas y sugiere 2 o 3 parecidas de la lista (misma "
+               "familia olfativa o notas parecidas).")
+    return "\n".join(out)
+
+
+def sincronizar_catalogo(forzar: bool = False) -> dict:
+    """Descarga el catálogo de la web y actualiza lo que el bot sabe. Si falla,
+    se conserva la última versión buena."""
+    try:
+        r = requests.get(CATALOGO_WEB_URL, timeout=25, headers={"Cache-Control": "no-cache",
+                                                                 "User-Agent": "IncantoBot/1.0"})
+        r.raise_for_status()
+        datos = parsear_catalogo_web(r.text)
+        if len(datos["perfumes"]) < 10:
+            raise ValueError(f"solo se reconocieron {len(datos['perfumes'])} referencias; se conserva el catálogo anterior")
+        texto = texto_catalogo(datos)
+        h = str(hash(texto))
+        with _catalogo_lock:
+            cambio = h != CATALOGO_ESTADO["hash"]
+            CATALOGO_ESTADO.update(texto=texto, fuente="web", ts=time.time(), error="",
+                                   referencias=len(datos["perfumes"]), hash=h)
+        try:
+            q("""INSERT INTO config (clave, valor, ts) VALUES ('catalogo', %s, %s)
+                 ON CONFLICT (clave) DO UPDATE SET valor=EXCLUDED.valor, ts=EXCLUDED.ts""", (texto, time.time()))
+        except Exception as e:
+            print("Aviso: no se pudo guardar el catálogo en la BD:", e)
+        print(f"Catálogo sincronizado desde la web: {len(datos['perfumes'])} referencias"
+              + (" (hubo cambios)" if cambio else " (sin cambios)"))
+    except Exception as e:
+        with _catalogo_lock:
+            CATALOGO_ESTADO["error"] = f"{datetime.now(TZ_BOGOTA):%d/%m %I:%M %p}: {e}"[:300]
+        print("No se pudo leer el catálogo de la web:", e)
+    return dict(CATALOGO_ESTADO)
+
+
+def system_prompt() -> str:
+    with _catalogo_lock:
+        catalogo = CATALOGO_ESTADO["texto"]
+    return SYSTEM_PROMPT + INFO_NEGOCIO.replace("{CATALOGO}", catalogo)
+
+
+def hilo_catalogo():
+    while True:
+        time.sleep(CATALOGO_SYNC_HORAS * 3600)
+        sincronizar_catalogo()
 
 # ===============================================================
 # Base de datos: Postgres (Neon) si hay DATABASE_URL, si no SQLite
@@ -358,6 +573,10 @@ def crear_tablas():
     q("""CREATE TABLE IF NOT EXISTS procesados (
         id TEXT PRIMARY KEY,
         ts DOUBLE PRECISION)""")
+    q("""CREATE TABLE IF NOT EXISTS config (
+        clave TEXT PRIMARY KEY,
+        valor TEXT,
+        ts DOUBLE PRECISION)""")
     # Columnas nuevas (clientes agregados a mano desde las islas)
     for col, tipo in (("origen", "TEXT DEFAULT 'WhatsApp'"), ("autoriza", "INTEGER DEFAULT 0")):
         try:
@@ -371,6 +590,19 @@ def crear_tablas():
 
 crear_tablas()
 lock = threading.Lock()   # protege la secuencia leer-estado → responder → guardar
+
+# Catálogo: primero la última copia guardada en la BD (por si la web no responde
+# justo al arrancar) y luego la web, en segundo plano para no demorar el arranque.
+try:
+    _fila = q("SELECT valor, ts FROM config WHERE clave='catalogo'", (), "one")
+    if _fila and _fila["valor"]:
+        CATALOGO_ESTADO.update(texto=_fila["valor"], fuente="bd", ts=_fila["ts"] or 0,
+                               hash=str(hash(_fila["valor"])),
+                               referencias=_fila["valor"].count("\n- ") - 5)
+except Exception as _e:
+    print("Aviso al leer el catálogo guardado:", _e)
+threading.Thread(target=sincronizar_catalogo, daemon=True).start()
+threading.Thread(target=hilo_catalogo, daemon=True).start()
 
 
 def contacto(numero: str, nombre: str = "") -> dict:
@@ -486,7 +718,7 @@ def preguntar_a_claude(messages: list, system_extra: str = "") -> str:
     resp = claude.messages.create(
         model=CLAUDE_MODEL,
         max_tokens=600,
-        system=[{"type": "text", "text": SYSTEM_PROMPT, "cache_control": {"type": "ephemeral"}}]
+        system=[{"type": "text", "text": system_prompt(), "cache_control": {"type": "ephemeral"}}]
                + ([{"type": "text", "text": system_extra}] if system_extra else []),
         messages=messages,
     )
@@ -936,6 +1168,23 @@ def api_campana():
       (ahora, nombre_campana, modo, texto if modo == "texto" else f"{plantilla} ({idioma}) {params}",
        len(numeros), enviados, fallidos, json.dumps(detalle, ensure_ascii=False)[:20000]))
     return jsonify(ok=True, enviados=enviados, fallidos=fallidos, detalle=detalle)
+
+
+@app.get("/api/catalogo")
+def api_catalogo():
+    """Qué catálogo está usando el bot ahora mismo (para revisar que la web se leyó bien)."""
+    with _catalogo_lock:
+        e = dict(CATALOGO_ESTADO)
+    return jsonify(fuente=e["fuente"], referencias=e["referencias"], actualizado=_hora(e["ts"]),
+                   error=e["error"], url=CATALOGO_WEB_URL, cada_horas=CATALOGO_SYNC_HORAS, texto=e["texto"])
+
+
+@app.post("/api/catalogo/actualizar")
+def api_catalogo_actualizar():
+    """Fuerza una relectura de la web (por ejemplo, justo después de cambiar productos)."""
+    e = sincronizar_catalogo(forzar=True)
+    return jsonify(ok=e["fuente"] == "web" and not e["error"], fuente=e["fuente"],
+                   referencias=e["referencias"], actualizado=_hora(e["ts"]), error=e["error"])
 
 
 @app.get("/api/campanas")
